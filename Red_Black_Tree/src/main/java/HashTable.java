@@ -1,153 +1,246 @@
-public class HashTable<K, V> {
-	private static final double load_size = 0.75;
+import java.util.Iterator;
+
+public class HashTable<K, V> implements Iterable<HashTable.Entity> {
+	
+	private static final int INIT_BUCKET_COUNT = 16;
+	private static final double LOAD_FACTOR = 0.5;
 	private int size;
-	private Bucket<K, V>[] buckets;
 	
-	HashTable() {
-		buckets = new Bucket[8];
+	// Массив бакетов (связных списков)
+	private Bucket[] buckets;
+	
+	@Override
+	public Iterator<HashTable.Entity> iterator() {
+		return new HashMapIterator();
 	}
 	
-	private int calculateIndex(K key) {
-		return Math.abs(key.hashCode() % buckets.length);
-	}
-	
-	public boolean add(K key, V value) {
-		if (buckets.length * load_size <= size)
-			resize();
-		int index = calculateIndex(key);
-		Bucket<K, V> bucket = buckets[index];
-		if (bucket == null) {
-			bucket = new Bucket<>();
-			buckets[index] = bucket;
+	class HashMapIterator implements Iterator<HashTable.Entity> {
+		int index = 0;
+		
+		@Override
+		public boolean hasNext() {
+			return index < buckets.length;
 		}
-		boolean result = bucket.add(key, value);
-		if (result)
-			size++;
-		return result;
-	}
-	
-	public boolean remove(K key, V value) {
-		int index = calculateIndex(key);
-		Bucket<K, V> bucket = buckets[index];
-		if (bucket == null)
-			return false;
-		boolean result = bucket.remove(key);
-		if (result)
-			size--;
-		return result;
-	}
-	
-	public void print() {
-		for (var item : buckets) {
-			if (item != null) {
-				item.print();
-				System.out.println();
-			} else
-				System.out.println("----");
+		
+		@Override
+		public Entity next() {
+			Entity entity = null;
+			while (buckets[index] == null) index++;
+			if (buckets[index].head.next != null) {
+				entity = buckets[index].head.value;
+				buckets[index].head = buckets[index].head.next;
+				return entity;
+			}
+			return buckets[index++].head.value;
+
+
+//            if(buckets[index].head.next != null)
+//                return buckets[index].head.value;
+//            return buckets[index++].head.value;
 		}
 	}
 	
-	private void resize() {
+	@Override
+	public String toString() {
+		StringBuilder stringBuilder = new StringBuilder();
+		for (Bucket bucket : buckets) {
+			if (bucket != null) {
+				stringBuilder.append(bucket);
+			}
+		}
+		//TODO: Если тяжело, пойти через toString
+		return stringBuilder.toString();
+		
+	}
+	
+	
+	/**
+	 * Элемент хэш-таблицы
+	 */
+	class Entity {
+		
+		// Ключ элемента
+		K key;
+		
+		// Значение элемента
+		V value;
+		
+		@Override
+		public String toString() {
+			return String.format("%s - %s", key, value);
+		}
+	}
+	
+	/**
+	 * Связный список
+	 *
+	 * @param <K> Ключ элемента хэш-таблицы
+	 * @param <V> Значение элемента хэш-таблицы
+	 */
+	class Bucket<K, V> {
+		
+		// Указатель на первый элемент связного списка
+		Node head;
+		
+		/**
+		 * Узел бакета (связного списка)
+		 */
+		class Node {
+			
+			// Указатель на следующий элемент связного списка
+			Node next;
+			
+			// Значение узла, указывающее на элемент хэш-таблицы
+			Entity value;
+		}
+		
+		@Override
+		public String toString() {
+			StringBuilder stringBuilder = new StringBuilder();
+			Node node = head;
+			while (node != null) {
+				stringBuilder.append("key: ");
+				stringBuilder.append(node.value.key);
+				stringBuilder.append(" value: ");
+				stringBuilder.append(node.value.value);
+				stringBuilder.append('\n');
+				node = node.next;
+			}
+			return stringBuilder.toString();
+		}
+		
+		/**
+		 * Добавление нового элемента хэш-таблицы
+		 *
+		 * @param entity элемент
+		 * @return
+		 */
+		public V add(Entity entity) {
+			Node node = new Node();
+			node.value = entity;
+			
+			if (head == null) {
+				head = node;
+				return null;
+			}
+			
+			Node currentNode = head;
+			while (true) {
+				if (currentNode.value.key.equals(entity.key)) {
+					V buf = (V) currentNode.value.value;
+					currentNode.value.value = entity.value;
+					return buf;
+				}
+				if (currentNode.next != null) {
+					currentNode = currentNode.next;
+				} else {
+					currentNode.next = node;
+					return null;
+				}
+			}
+		}
+		
+		public V get(K key) {
+			Node node = head;
+			while (node != null) {
+				if (node.value.key.equals(key))
+					return (V) node.value.value;
+				node = node.next;
+			}
+			return null;
+		}
+		
+		public V remove(K key) {
+			if (head == null)
+				return null;
+			if (head.value.key.equals(key)) {
+				V buf = (V) head.value.value;
+				head = head.next;
+				return buf;
+			} else {
+				Node node = head;
+				while (node.next != null) {
+					if (node.next.value.key.equals(key)) {
+						V buf = (V) node.next.value.value;
+						node.next = node.next.next;
+						return buf;
+					}
+					node = node.next;
+				}
+				return null;
+			}
+		}
+		
+	}
+	
+	private int calculateBucketIndex(K key) {
+		return Math.abs(key.hashCode()) % buckets.length;
+	}
+	
+	private void recalculate() {
+		size = 0;
 		Bucket<K, V>[] old = buckets;
 		buckets = new Bucket[old.length * 2];
 		for (int i = 0; i < old.length; i++) {
 			Bucket<K, V> bucket = old[i];
-			if (bucket == null)
-				continue;
-			Bucket.Node currentNode = bucket.root;
-			while (currentNode != null) {
-				this.add((K) currentNode.pair.key, (V) currentNode.pair.value);
-				currentNode = currentNode.next;
+			if (bucket != null) {
+				Bucket.Node node = bucket.head;
+				while (node != null) {
+					put((K) node.value.key, (V) node.value.value);
+					node = node.next;
+				}
 			}
-			old[i] = null;
 		}
-		old = null;
 	}
 	
-	private class Bucket<K, V> {
-		Node root;
-		
-		public boolean add(K key, V value) {
-			if (root == null) {
-				root = new Node(key, value);
-				return true;
-			}
-			Node currentNode = root;
-			while (currentNode.next != null)
-				if (currentNode.pair.key == key)
-					return false;
-				else
-					currentNode = currentNode.next;
-			currentNode.next = new Node(key, value);
-			return true;
+	public V put(K key, V value) {
+		if (buckets.length * LOAD_FACTOR <= size) {
+			recalculate();
+		}
+		int index = calculateBucketIndex(key);
+		Bucket bucket = buckets[index];
+		if (bucket == null) {
+			bucket = new Bucket();
+			buckets[index] = bucket;
 		}
 		
-		public boolean remove(K key) {
-			if (root == null)
-				return false;
-			if (root.pair.key == key) {
-				root = root.next;
-				return true;
-			}
-			Node currentNode = root;
-			while (currentNode.next != null) {
-				if (currentNode.next.pair.key == key) {
-					currentNode.next = currentNode.next.next;
-					return true;
-				}
-				currentNode = currentNode.next;
-			}
-			return false;
-		}
+		Entity entity = new Entity();
+		entity.key = key;
+		entity.value = value;
 		
-		public V getValue(K key) {
-			if (root == null)
-				return null;
-			Node currentNode = root;
-			while (currentNode != null)
-				if (currentNode.pair.key == key)
-					return currentNode.pair.value;
-				else
-					currentNode = currentNode.next;
+		V buf = (V) bucket.add(entity);
+		if (buf == null) {
+			size++;
+		}
+		return buf;
+	}
+	
+	public V get(K key) {
+		int index = calculateBucketIndex(key);
+		Bucket bucket = buckets[index];
+		if (bucket == null)
 			return null;
+		return (V) bucket.get(key);
+	}
+	
+	public V remove(K key) {
+		int index = calculateBucketIndex(key);
+		Bucket bucket = buckets[index];
+		if (bucket == null)
+			return null;
+		V buf = (V) bucket.remove(key);
+		if (buf != null) {
+			size--;
 		}
-		
-		public void print() {
-			Node currentNode = root;
-			while (currentNode != null) {
-				System.out.print("[" + currentNode.pair.key + ";" + currentNode.pair.value + "]");
-				currentNode = currentNode.next;
-			}
-		}
-		
-		private class Node {
-			Pair pair;
-			Node next;
-			
-			Node() {
-			}
-			
-			Node(Pair pair) {
-				this.pair = pair;
-			}
-			
-			Node(K key, V value) {
-				pair = new Pair(key, value);
-			}
-		}
-		
-		private class Pair {
-			K key;
-			V value;
-			
-			Pair() {
-			}
-			
-			Pair(K key, V value) {
-				this.key = key;
-				this.value = value;
-			}
-		}
+		return buf;
+	}
+	
+	public HashTable() {
+		buckets = new Bucket[INIT_BUCKET_COUNT];
+	}
+	
+	public HashTable(int initCount) {
+		buckets = new Bucket[initCount];
 	}
 	
 	
